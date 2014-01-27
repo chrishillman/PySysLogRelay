@@ -2,6 +2,9 @@
 import socket
 import logging
 import SocketServer
+import sqlite3
+import datetime
+
 content=""
 LISTEN_HOST, LISTEN_PORT, SEND_HOST, SEND_PORT, LOG_FILE = "0.0.0.0", 514, "127.0.0.1", 515, 'syslogfile_proxy.log'
 
@@ -35,22 +38,35 @@ print("SEND_HOST="+SEND_HOST+ '\n')
 print("SEND_PORT="+str(SEND_PORT)+ '\n')
 print('\n'+" Display Logged Data: "+'\n')
 
-logging.basicConfig(level=logging.INFO, format='%(message)s', datefmt='', filename=LOG_FILE, filemode='a')
- 
+conn = sqlite3.connect('syslog.db')
+cursor = conn.cursor()
+try:
+    cursor.execute('''CREATE TABLE syslog (time_stamp text, source text, message text)''')
+except:
+    print("error on table create")
+    pass
+
 class SyslogUDPHandler(SocketServer.BaseRequestHandler):
  
     def handle(self):
         data = bytes.decode(self.request[0].strip())
         print( "%s : " % self.client_address[0], str(data))
-        logging.info(str(data))
+        try:
+            cursor.execute('INSERT INTO syslog values (?,?,?)', (datetime.datetime.now().strftime("%y%m%d%H%M%S%f"), self.client_address[0], str(data)))
+        except:
+            print("error on insert")
+            raise
+            pass
+        conn.commit()
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(data, (SEND_HOST, SEND_PORT))
  
 if __name__ == "__main__":
-	try:
-		server = SocketServer.UDPServer((LISTEN_HOST,LISTEN_PORT), SyslogUDPHandler)
-		server.serve_forever(poll_interval=0.25)
-	except (IOError, SystemExit):
-		raise
-	except KeyboardInterrupt:
-		print ("Crtl+C Pressed. Shutting down.")
+        try:
+                server = SocketServer.UDPServer((LISTEN_HOST,LISTEN_PORT), SyslogUDPHandler)
+                server.serve_forever(poll_interval=0.25)
+        except (IOError, SystemExit):
+                raise
+        except KeyboardInterrupt:
+                print ("Crtl+C Pressed. Shutting down.")
+                conn.close()
